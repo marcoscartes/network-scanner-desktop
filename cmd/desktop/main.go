@@ -19,16 +19,20 @@ import (
 	"github.com/zserge/lorca"
 )
 
+var (
+	instanceLock net.Listener
+)
+
 func main() {
-	// Single instance check per user to prevent multiple windows opening
-	// We try to listen on a specific port. If it's taken, another instance is running.
-	lockPort := 5051
-	lock, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", lockPort))
+	// Single instance check using a TCP port lock
+	var err error
+	instanceLock, err = net.Listen("tcp", "127.0.0.1:5055")
 	if err != nil {
 		log.Println("Another instance is already running. Exiting.")
 		return
 	}
-	defer lock.Close()
+
+	log.Printf("Application starting (PID: %d)", os.Getpid())
 
 	// Initialize database
 	dbPath := "scanner.db"
@@ -116,7 +120,8 @@ func openBrowser(url string) {
 	case "linux":
 		err = execCommand("xdg-open", url)
 	case "windows":
-		err = execCommand("rundll32", "url.dll,FileProtocolHandler", url)
+		// 'start' command is safer than rundll32 for URLs
+		err = execCommand("cmd", "/c", "start", "", url)
 	case "darwin":
 		err = execCommand("open", url)
 	default:
