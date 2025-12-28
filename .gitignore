@@ -6,12 +6,7 @@
 *.dylib
 /scanner
 scanner.exe
-
-# Test binary
-*.test
-
-# Output of the go coverage tool
-*.out
+scanner-desktop*
 
 # Database files
 *.db
