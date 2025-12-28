@@ -26,7 +26,7 @@ func DiscoverDevices(ipRange string) ([]*database.Device, error) {
 
 	// Use a worker pool to limit concurrency and the number of spawned processes
 	jobs := make(chan string, 256)
-	workerCount := 50 // Balance discovery speed with resource usage
+	workerCount := 20 // Balance discovery speed with resource usage
 
 	for w := 1; w <= workerCount; w++ {
 		wg.Add(1)
@@ -85,6 +85,7 @@ func getMACAddress(ip string) string {
 
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("arp", "-a", ip)
+		hideWindow(cmd)
 	} else {
 		cmd = exec.Command("arp", "-n", ip)
 	}

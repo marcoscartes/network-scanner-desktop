@@ -11,12 +11,8 @@ import (
 	"network-scanner-desktop/internal/web"
 	"os"
 	"os/exec"
-	"os/signal"
 	"runtime"
-	"syscall"
 	"time"
-
-	"github.com/zserge/lorca"
 )
 
 var (
@@ -82,34 +78,9 @@ func main() {
 		}
 	}()
 
-	// Launch Lorca
-	// This will open a standalone window using the installed Chrome/Edge
-	ui, err := lorca.New(fmt.Sprintf("http://127.0.0.1:%s", port), "", 1280, 850)
-	if err != nil {
-		log.Printf("Failed to launch standalone window: %v. Opening in browser instead.", err)
-		openBrowser(fmt.Sprintf("http://127.0.0.1:%s", port))
-	} else {
-		defer ui.Close()
-
-		// Bind quitApp function to allow closing from JS
-		ui.Bind("quitApp", func() {
-			ui.Close()
-			os.Exit(0)
-		})
-	}
-
-	// Graceful shutdown
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
-
-	if ui != nil {
-		select {
-		case <-sigc:
-		case <-ui.Done():
-		}
-	} else {
-		<-sigc
-	}
+	// Launch UI
+	// This will use WebView2 (no CGO) on Windows and Lorca on other platforms
+	launchUI(port)
 
 	log.Println("Application exiting...")
 }

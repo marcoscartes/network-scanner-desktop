@@ -28,7 +28,7 @@ go mod tidy
 
 echo [2/2] Compiling Desktop Application...
 :: -H windowsgui hides the console window when running the app
-go build -ldflags="-H windowsgui -s -w" -o scanner-desktop.exe cmd/desktop/main.go
+go build -ldflags="-H windowsgui -s -w" -o scanner-desktop.exe ./cmd/desktop
 
 if %errorlevel% equ 0 (
     echo.
