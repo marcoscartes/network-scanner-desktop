@@ -24,31 +24,40 @@ func DiscoverDevices(ipRange string) ([]*database.Device, error) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
+	// Use a worker pool to limit concurrency and the number of spawned processes
+	jobs := make(chan string, 256)
+	workerCount := 50 // Balance discovery speed with resource usage
+
+	for w := 1; w <= workerCount; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for targetIP := range jobs {
+				if isHostAlive(targetIP) {
+					mac := getMACAddress(targetIP)
+					device := &database.Device{
+						IP:       targetIP,
+						MAC:      mac,
+						LastSeen: time.Now(),
+					}
+
+					mu.Lock()
+					devices = append(devices, device)
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+
 	// Generate all IPs in range
 	for ip := ipnet.IP.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
 		ipStr := ip.String()
 		if strings.HasSuffix(ipStr, ".0") || strings.HasSuffix(ipStr, ".255") {
 			continue
 		}
-
-		wg.Add(1)
-		go func(targetIP string) {
-			defer wg.Done()
-
-			if isHostAlive(targetIP) {
-				mac := getMACAddress(targetIP)
-				device := &database.Device{
-					IP:       targetIP,
-					MAC:      mac,
-					LastSeen: time.Now(),
-				}
-
-				mu.Lock()
-				devices = append(devices, device)
-				mu.Unlock()
-			}
-		}(ipStr)
+		jobs <- ipStr
 	}
+	close(jobs)
 
 	wg.Wait()
 	log.Printf("Discovered %d devices\n", len(devices))
@@ -61,6 +70,7 @@ func isHostAlive(ip string) bool {
 
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("ping", "-n", "1", "-w", "500", ip)
+		hideWindow(cmd)
 	} else {
 		cmd = exec.Command("ping", "-c", "1", "-W", "1", ip)
 	}
