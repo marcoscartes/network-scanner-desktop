@@ -1,0 +1,1284 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Network Scanner Dashboard</title>
+    <link rel="icon" type="image/png" href="/static/images/logo.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#"><i class="bi bi-hdd-network"></i> Network Scanner (Go)</a>
+            <div class="d-flex align-items-center">
+                <div class="d-flex align-items-center me-3 border-end border-secondary pe-3">
+                    <div class="form-check form-switch me-2" title="Toggle Auto-Refresh">
+                        <input class="form-check-input cursor-pointer" type="checkbox" id="autoRefreshToggle" checked
+                            onchange="updateRefreshSettings()">
+                        <label class="form-check-label text-light small" for="autoRefreshToggle">Live</label>
+                    </div>
+                    <select class="form-select form-select-sm bg-dark text-light border-secondary py-0"
+                        id="refreshInterval" onchange="updateRefreshSettings()">
+                        <option value="5000">5s</option>
+                        <option value="10000">10s</option>
+                        <option value="30000" selected>30s</option>
+                        <option value="60000">1m</option>
+                        <option value="300000">5m</option>
+                        <option value="900000">15m</option>
+                        <option value="3600000">1h</option>
+                    </select>
+                </div>
+                <!-- Management Dropdown -->
+                <div class="dropdown me-3">
+                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
+                        data-bs-toggle="dropdown">
+                        <i class="bi bi-hdd-stack"></i> Data
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow">
+                        <li><a class="dropdown-item" href="/api/export" target="_blank"><i
+                                    class="bi bi-download me-2"></i> Export JSON</a></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><a class="dropdown-item" href="#" onclick="document.getElementById('importFile').click()"><i
+                                    class="bi bi-upload me-2"></i> Import JSON</a></li>
+                    </ul>
+                </div>
+                <input type="file" id="importFile" class="hidden" onchange="importDevices(this)">
+                <div class="me-3" title="Real-time Status">
+                    <i class="bi bi-broadcast text-muted" id="liveIndicator"></i>
+                </div>
+                <button class="btn btn-link text-light me-2 p-0" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+                    <i class="bi bi-sun" id="themeIcon"></i>
+                </button>
+                <button class="btn btn-outline-light position-relative" onclick="toggleNotifications()">
+                    <i class="bi bi-bell"></i>
+                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger hidden"
+                        id="notificationBadge">
+                        0
+                    </span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Network Health Score -->
+        <div class="card mb-4 bg-dark border-secondary shadow-sm">
+            <div class="card-body py-2">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <span class="text-muted small">NETWORK HEALTH SCORE:</span>
+                        <span
+                            class="fw-bold fs-5 ms-2 {{if lt .networkSecurityScore 70}}text-danger{{else if lt .networkSecurityScore 90}}text-warning{{else}}text-success{{end}}">{{.networkSecurityScore}}%</span>
+                    </div>
+                    <div class="col">
+                        <div class="progress progress-container">
+                            <div class="progress-bar {{if lt .networkSecurityScore 70}}bg-danger{{else if lt .networkSecurityScore 90}}bg-warning{{else}}bg-success{{end}}"
+                                role="progressbar" style="width: {{.networkSecurityScore}}%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Widgets -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stat-card shadow-sm">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="stat-icon text-primary me-3"><i class="bi bi-hdd-network"></i></div>
+                        <div>
+                            <span class="stat-value">{{.totalDevices}}</span>
+                            <span class="stat-label">Total Devices</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card shadow-sm">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="stat-icon text-success me-3"><i class="bi bi-broadcast"></i></div>
+                        <div>
+                            <span class="stat-value">{{.activeDevices}}</span>
+                            <span class="stat-label">Active (24h)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card shadow-sm">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="stat-icon text-info me-3"><i class="bi bi-shield-check"></i></div>
+                        <div>
+                            <span class="stat-value">{{.knownDevices}}</span>
+                            <span class="stat-label">Known Devices</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card shadow-sm border-{{if gt .criticalRisks 0}}danger{{else}}success{{end}}">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="stat-icon text-{{if gt .criticalRisks 0}}danger{{else}}success{{end}} me-3">
+                            <i class="bi bi-shield-{{if gt .criticalRisks 0}}exclamation{{else}}check{{end}}"></i>
+                        </div>
+                        <div>
+                            <span class="stat-value">{{.criticalRisks}}</span>
+                            <span class="stat-label">Security Risks</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics Section -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header border-secondary">
+                        <h5 class="card-title mb-0"><i class="bi bi-graph-up"></i> Network Activity (Last 30 Days)</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="networkActivityChart" class="chart-canvas"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header border-secondary">
+                        <h5 class="card-title mb-0"><i class="bi bi-pie-chart"></i> Device Types</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="deviceDistributionChart" class="chart-canvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-lg-8 mx-auto">
+                <div class="search-container">
+                    <i class="bi bi-search search-icon"></i>
+                    <input type="text" id="deviceSearch" class="form-control"
+                        placeholder="Search devices... (e.g., Apple, tag:wifi, port:80, known:yes)" value="{{.query}}"
+                        onkeyup="handleSearchKeyUp(event)" list="searchSuggestions">
+                    <datalist id="searchSuggestions">
+                        <option value="tag:">
+                        <option value="port:">
+                        <option value="known:yes">
+                        <option value="known:no">
+                        <option value="vendor:">
+                        <option value="type:">
+                        <option value="group:">
+                    </datalist>
+                    {{if .query}}
+                    <button class="clear-search" onclick="clearSearch()">
+                        <i class="bi bi-x-circle-fill"></i>
+                    </button>
+                    {{else}}
+                    <div id="searchHint"
+                        class="position-absolute end-0 top-50 translate-middle-y me-3 pointer-events-none opacity-50 small d-none d-md-block">
+                        <span class="badge bg-secondary">/</span> to search
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col">
+                <div class="card shadow-sm">
+                    <div class="card-header border-secondary">
+                        <h5 class="card-title mb-0"><i class="bi bi-router"></i> Discovered Devices</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-dark table-hover mb-0 align-middle">
+                                <thead class="table-secondary">
+                                    <tr>
+                                        <th>Status</th>
+                                        <th>Device / IP</th>
+                                        <th>MAC Address</th>
+                                        <th>Vendor</th>
+                                        <th>Type & Tags</th>
+                                        <th>Group</th>
+                                        <th>Security Risks</th>
+                                        <th>Open Ports</th>
+                                        <th>Metrics</th>
+                                        <th>Last Seen</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {{range .devices}}
+                                    {{$ip := .IP}}
+                                    <tr class="fade-in">
+                                        <td><span class="status-dot"></span>Active</td>
+                                        <td>
+                                            {{if .CustomName}}
+                                            <div class="fw-bold">{{.CustomName}}</div>
+                                            <small class="text-muted font-monospace">{{.IP}}</small>
+                                            {{else}}
+                                            <div class="fw-bold">{{.IP}}</div>
+                                            {{end}}
+                                            {{if .IsKnown}}<i class="bi bi-shield-check text-success ms-1"
+                                                title="Trusted Device"></i>{{end}}
+                                        </td>
+                                        <td class="font-monospace">{{.MAC}}</td>
+                                        <td>{{.Vendor}}</td>
+                                        <td>
+                                            {{if ne .CustomType ""}}
+                                            <span class="badge bg-info text-dark">{{.CustomType}}</span>
+                                            {{else if ne .Type "Unknown"}}
+                                            <span class="badge bg-secondary">{{.Type}}</span>
+                                            {{else}}
+                                            <span class="text-muted">Unknown</span>
+                                            {{end}}
+
+                                            {{if .Tags}}
+                                            <div class="mt-1">
+                                                {{range .Tags}}
+                                                <span
+                                                    class="badge border border-secondary text-secondary tag-badge">{{.}}</span>
+                                                {{end}}
+                                            </div>
+                                            {{end}}
+                                        </td>
+                                        <td>
+                                            {{if .GroupName}}
+                                            <span class="badge bg-secondary rounded-pill">
+                                                <i class="bi bi-folder2"></i> {{.GroupName}}
+                                            </span>
+                                            {{else}}
+                                            <span class="text-muted small">None</span>
+                                            {{end}}
+                                        </td>
+                                        <td>
+                                            {{if .Vulnerabilities}}
+                                            <span class="badge bg-danger shadow-sm cursor-pointer"
+                                                onclick="openEditModal(this.closest('tr').querySelector('.btn-outline-secondary').dataset)"
+                                                title="Security Risks Detected">
+                                                <i class="bi bi-exclamation-triangle"></i> {{len .Vulnerabilities}}
+                                            </span>
+                                            {{else}}
+                                            <span class="text-success small" title="Tested and secure"><i
+                                                    class="bi bi-shield-check"></i> Safe</span>
+                                            {{end}}
+                                        </td>
+                                        <td>
+                                            {{if .OpenPorts}}
+                                            <small class="font-monospace">
+                                                {{range .OpenPorts}}
+                                                <a href="http://{{$ip}}:{{.}}" target="_blank"
+                                                    class="badge bg-success me-1 text-decoration-none port-badge"
+                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                    data-port="{{.}}">{{.}}</a>
+                                                {{end}}
+                                            </small>
+                                            {{else}}
+                                            <span class="text-muted">-</span>
+                                            {{end}}
+                                        </td>
+                                        <td>
+                                            {{if .MetricsURLs}}
+                                            <span class="badge badge-metrics">{{len .MetricsURLs}} Endpoints</span><br>
+                                            <small class="text-muted metrics-text">
+                                                {{range .MetricsURLs}}
+                                                <a href="{{.}}" target="_blank"
+                                                    class="link-info text-decoration-none">{{.}}</a><br>
+                                                {{end}}
+                                            </small>
+                                            {{else}}
+                                            <span class="text-muted">-</span>
+                                            {{end}}
+                                        </td>
+                                        <td><small>{{.LastSeen.Format "15:04:05"}}</small></td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-secondary me-1"
+                                                onclick="openEditModal(this.dataset)" data-mac="{{.MAC}}"
+                                                data-ip="{{.IP}}" data-custom-name="{{.CustomName}}"
+                                                data-custom-type="{{.CustomType}}" data-is-known="{{.IsKnown}}"
+                                                data-tags="{{range $i, $t := .Tags}}{{if $i}},{{end}}{{$t}}{{end}}"
+                                                data-notes="{{.Notes}}" data-vulnerabilities='{{json .Vulnerabilities}}'
+                                                data-group-name="{{.GroupName}}" title="Edit Device">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-primary"
+                                                onclick="showScanWarning('{{.IP}}')" title="Full port scan (1-65535)">
+                                                <i class="bi bi-plus-circle"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {{end}}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="card-footer border-secondary text-muted text-end">
+                        <small>Total Devices: {{len .devices}}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notifications Sidebar -->
+    <div id="notificationsSidebar" class="notifications-sidebar">
+        <div class="notifications-header">
+            <h5><i class="bi bi-bell"></i> Notifications</h5>
+            <div>
+                <button class="btn btn-sm btn-outline-primary me-1" title="Mark all read" onclick="markAllAsRead()">
+                    <i class="bi bi-check-all"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger me-2" title="Clear all" onclick="clearAllNotifications()">
+                    <i class="bi bi-trash"></i>
+                </button>
+                <button class="btn-close btn-close-white" onclick="toggleNotifications()"></button>
+            </div>
+        </div>
+        <div class="notifications-body" id="notificationsList">
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-bell-slash empty-state-icon"></i>
+                <p>No notifications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay -->
+    <div id="notificationsOverlay" class="notifications-overlay" onclick="toggleNotifications()"></div>
+
+    <!-- Warning Modal -->
+    <div class="modal fade" id="warningModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-warning"></i> Full Port Scan
+                        Warning</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>You are about to perform a full port scan (1-65535) on <strong id="scanTargetIp"></strong>.</p>
+                    <p class="text-warning"><i class="bi bi-clock"></i> This scan may take 2-5 minutes to complete.</p>
+                    <p>Do you want to continue?</p>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="startFullScan()">Start Scan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Modal -->
+    <div class="modal fade" id="progressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title"><i class="bi bi-arrow-repeat spin"></i> Scanning Ports...</h5>
+                </div>
+                <div class="modal-body">
+                    <p>Scanning <strong id="progressIp"></strong></p>
+                    <div class="progress mb-3 scan-progress-bar">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                            role="progressbar" style="width: 0%">0%</div>
+                    </div>
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <small class="text-muted">Current Port</small>
+                            <div><strong id="currentPort">0</strong></div>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted">Ports Found</small>
+                            <div><strong id="portsFound" class="text-success">0</strong></div>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted">Elapsed</small>
+                            <div><strong id="elapsedTime">0s</strong></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Device Modal -->
+    <div class="modal fade" id="editDeviceModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit Device</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editDeviceForm">
+                        <input type="hidden" id="editDeviceMac">
+                        <div class="mb-3">
+                            <label class="form-label text-muted">IP / MAC</label>
+                            <div class="form-control bg-secondary text-light border-0" id="editDeviceIpMac" readonly>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editCustomName" class="form-label">Name</label>
+                            <input type="text" class="form-control bg-dark text-light border-secondary"
+                                id="editCustomName" placeholder="e.g. Living Room TV">
+                        </div>
+                        <div class="mb-3">
+                            <label for="editCustomType" class="form-label">Type</label>
+                            <input type="text" class="form-control bg-dark text-light border-secondary"
+                                id="editCustomType" list="deviceTypes" placeholder="e.g. Smartphone">
+                            <datalist id="deviceTypes">
+                                <option value="Computer">
+                                <option value="Mobile">
+                                <option value="Tablet">
+                                <option value="IoT">
+                                <option value="Router">
+                                <option value="Printer">
+                                <option value="TV">
+                            </datalist>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editTags" class="form-label">Tags</label>
+                            <input type="text" class="form-control bg-dark text-light border-secondary" id="editTags"
+                                placeholder="e.g. personal, critical, wifi">
+                            <div class="form-text text-muted">Comma separated values</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editGroupName" class="form-label">Group</label>
+                            <input type="text" class="form-control bg-dark text-light border-secondary"
+                                id="editGroupName" list="groupSuggestions" placeholder="e.g. Home, Office, Servers">
+                            <datalist id="groupSuggestions">
+                                <option value="Home">
+                                <option value="Office">
+                                <option value="Servers">
+                                <option value="IoT">
+                                <option value="Guests">
+                            </datalist>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input bg-dark border-secondary" id="editIsKnown">
+                            <label class="form-check-label" for="editIsKnown">Mark as Known/Trusted</label>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editNotes" class="form-label">Notes</label>
+                            <textarea class="form-control bg-dark text-light border-secondary" id="editNotes"
+                                rows="3"></textarea>
+                        </div>
+                        <div id="vulnerabilitiesSection" class="d-none">
+                            <hr class="border-secondary">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label text-warning mb-0"><i class="bi bi-exclamation-triangle"></i>
+                                    Security Vulnerabilities</label>
+                                <button type="button" class="btn btn-sm btn-outline-warning"
+                                    onclick="rescanVulnerabilities()">
+                                    <i class="bi bi-shield-shaded"></i> Rescan
+                                </button>
+                            </div>
+                            <div id="vulnerabilitiesList" class="list-group list-group-flush bg-transparent">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveDeviceChanges()">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function openEditModal(data) {
+            document.getElementById('editDeviceMac').value = data.mac;
+            document.getElementById('editDeviceIpMac').textContent = data.ip + ' / ' + data.mac;
+            document.getElementById('editCustomName').value = data.customName || '';
+            document.getElementById('editCustomType').value = data.customType || '';
+            document.getElementById('editTags').value = data.tags || '';
+            document.getElementById('editNotes').value = data.notes || '';
+            document.getElementById('editIsKnown').checked = data.isKnown === 'true';
+            document.getElementById('editGroupName').value = data.groupName || '';
+
+            // Show vulnerabilities if any
+            const vulnSection = document.getElementById('vulnerabilitiesSection');
+            const vulnList = document.getElementById('vulnerabilitiesList');
+            vulnList.innerHTML = '';
+
+            if (data.vulnerabilities && data.vulnerabilities !== 'null' && data.vulnerabilities !== '[]') {
+                try {
+                    const vulns = JSON.parse(data.vulnerabilities);
+                    if (vulns && vulns.length > 0) {
+                        vulnSection.classList.remove('d-none');
+                        vulns.forEach(v => {
+                            const severityClass = v.severity === 'critical' ? 'danger' :
+                                (v.severity === 'high' ? 'warning text-dark' : 'info text-dark');
+
+                            const item = document.createElement('div');
+                            item.className = 'list-group-item bg-transparent border-secondary px-0 text-light';
+                            item.innerHTML = `
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="badge bg-${severityClass} me-2">${v.severity.toUpperCase()}</span>
+                                    <span class="fw-bold">${v.name}</span>
+                                </div>
+                                <div class="small text-muted mt-1">${v.description}</div>
+                                ${v.solution ? `<div class="small text-info mt-1"><strong>Fix:</strong> ${v.solution}</div>` : ''}
+                                ${v.more_info ? `
+                                    <div class="mt-2 text-end">
+                                        <a href="${v.more_info}" target="_blank" class="btn btn-sm btn-outline-info py-0" style="font-size: 0.75rem;">
+                                            <i class="bi bi-info-circle"></i> Learn More
+                                        </a>
+                                    </div>
+                                ` : ''}
+                            `;
+                            vulnList.appendChild(item);
+                        });
+                    } else {
+                        vulnSection.classList.add('d-none');
+                    }
+                } catch (e) {
+                    console.error('Error parsing vulnerabilities:', e);
+                    vulnSection.classList.add('d-none');
+                }
+            } else {
+                vulnSection.classList.add('d-none');
+            }
+
+            document.getElementById('editGroupName').value = data.groupName || '';
+
+            new bootstrap.Modal(document.getElementById('editDeviceModal')).show();
+        }
+
+        function saveDeviceChanges() {
+            const mac = document.getElementById('editDeviceMac').value;
+            const tagsStr = document.getElementById('editTags').value;
+            const tags = tagsStr.split(',').map(t => t.trim()).filter(t => t);
+
+            const payload = {
+                custom_name: document.getElementById('editCustomName').value,
+                custom_type: document.getElementById('editCustomType').value,
+                is_known: document.getElementById('editIsKnown').checked,
+                tags: tags,
+                notes: document.getElementById('editNotes').value,
+                group_name: document.getElementById('editGroupName').value
+            };
+
+            fetch(`/api/devices/${mac}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to update');
+                    return response.json();
+                })
+                .then(() => {
+                    location.reload();
+                })
+                .catch(err => {
+                    alert('Error saving changes: ' + err.message);
+                });
+        }
+
+        function importDevices(input) {
+            if (!input.files || !input.files[0]) return;
+
+            const file = input.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            if (!confirm(`Are you sure you want to import devices from ${file.name}? This will update existing devices and add new ones.`)) {
+                input.value = '';
+                return;
+            }
+
+            fetch('/api/import', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert(`Successfully imported ${data.count} devices!`);
+                        location.reload();
+                    } else {
+                        throw new Error(data.error || 'Import failed');
+                    }
+                })
+                .catch(err => {
+                    alert('Error importing devices: ' + err.message);
+                })
+                .finally(() => {
+                    input.value = '';
+                });
+        }
+
+        function rescanVulnerabilities() {
+            const mac = document.getElementById('editDeviceMac').value;
+            const btn = event.currentTarget;
+            const originalContent = btn.innerHTML;
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Checking...';
+
+            fetch(`/api/devices/${mac}/check-vulnerabilities`, { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Refresh the modal content with new vulns
+                        const vulnSection = document.getElementById('vulnerabilitiesSection');
+                        const vulnList = document.getElementById('vulnerabilitiesList');
+                        vulnList.innerHTML = '';
+
+                        if (data.vulnerabilities && data.vulnerabilities.length > 0) {
+                            vulnSection.classList.remove('d-none');
+                            data.vulnerabilities.forEach(v => {
+                                const severityClass = v.severity === 'critical' ? 'danger' :
+                                    (v.severity === 'high' ? 'warning text-dark' : 'info text-dark');
+
+                                const item = document.createElement('div');
+                                item.className = 'list-group-item bg-transparent border-secondary px-0 text-light fade-in';
+                                item.innerHTML = `
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="badge bg-${severityClass} me-2">${v.severity.toUpperCase()}</span>
+                                        <span class="fw-bold">${v.name}</span>
+                                    </div>
+                                    <div class="small text-muted mt-1">${v.description}</div>
+                                    ${v.solution ? `<div class="small text-info mt-1"><strong>Fix:</strong> ${v.solution}</div>` : ''}
+                                    ${v.more_info ? `
+                                        <div class="mt-2 text-end">
+                                            <a href="${v.more_info}" target="_blank" class="btn btn-sm btn-outline-info py-0" style="font-size: 0.75rem;">
+                                                <i class="bi bi-info-circle"></i> Learn More
+                                            </a>
+                                        </div>
+                                    ` : ''}
+                                `;
+                                vulnList.appendChild(item);
+                            });
+                        } else {
+                            vulnSection.classList.add('d-none');
+                            alert('No vulnerabilities found!');
+                        }
+                    } else {
+                        alert('Check failed: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(err => alert('Error checking vulnerabilities: ' + err))
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalContent;
+                });
+        }
+
+        let currentScanIp = null;
+        let pollInterval = null;
+        let autoRefreshTimeout = null;
+        let socket = null;
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-bs-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-bs-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        }
+
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                if (theme === 'dark') {
+                    icon.className = 'bi bi-sun';
+                } else {
+                    icon.className = 'bi bi-moon-stars';
+                }
+            }
+        }
+
+        // Initialize theme
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-bs-theme', savedTheme);
+        // Wait for DOM to update icon
+        document.addEventListener('DOMContentLoaded', () => updateThemeIcon(savedTheme));
+
+        // Initialize WebSocket
+        function initWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = function () {
+                console.log('WebSocket connected');
+                document.getElementById('liveIndicator').classList.add('text-success');
+                document.getElementById('liveIndicator').classList.remove('text-muted');
+            };
+
+            socket.onmessage = function (event) {
+                const msg = JSON.parse(event.data);
+                handleWSMessage(msg);
+            };
+
+            socket.onclose = function () {
+                console.log('WebSocket disconnected. Retrying in 5s...');
+                document.getElementById('liveIndicator').classList.remove('text-success');
+                document.getElementById('liveIndicator').classList.add('text-muted');
+                setTimeout(initWebSocket, 5000);
+            };
+
+            socket.onerror = function (err) {
+                console.error('WebSocket error:', err);
+                socket.close();
+            };
+        }
+
+        function handleSearchKeyUp(event) {
+            if (event.key === "Enter") {
+                const query = event.target.value.trim();
+                if (query) {
+                    window.location.href = `/?q=${encodeURIComponent(query)}`;
+                } else {
+                    window.location.href = "/";
+                }
+            }
+        }
+
+        function clearSearch() {
+            window.location.href = "/";
+        }
+
+        // Global hotkeys
+        document.addEventListener('keydown', function (e) {
+            // '/' to focus search
+            if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                document.getElementById('deviceSearch').focus();
+            }
+        });
+
+        function handleWSMessage(msg) {
+            console.log('WS Message:', msg);
+            switch (msg.type) {
+                case 'scan_progress':
+                    if (currentScanIp === msg.ip) {
+                        updateScanUI(msg.data);
+                    }
+                    break;
+                case 'scan_complete':
+                    if (currentScanIp === msg.ip) {
+                        handleScanComplete(msg.ip, msg.data);
+                    }
+                    break;
+                case 'discovery_complete':
+                    const live = document.getElementById('autoRefreshToggle').checked;
+                    if (live && !document.querySelector('.modal.show') && !currentScanIp) {
+                        console.log('Discovery complete, reloading...');
+                        location.reload();
+                    }
+                    break;
+                case 'notification':
+                    loadNotifications();
+                    break;
+            }
+        }
+
+        // User Settings logic
+        const storedRefresh = localStorage.getItem('autoRefreshEnabled');
+        const storedInterval = localStorage.getItem('refreshInterval');
+
+        if (storedRefresh !== null) {
+            const toggle = document.getElementById('autoRefreshToggle');
+            if (toggle) toggle.checked = storedRefresh === 'true';
+        }
+        if (storedInterval) {
+            const selector = document.getElementById('refreshInterval');
+            if (selector) selector.value = storedInterval;
+        }
+
+        function updateRefreshSettings() {
+            const enabled = document.getElementById('autoRefreshToggle').checked;
+            const interval = document.getElementById('refreshInterval').value;
+
+            localStorage.setItem('autoRefreshEnabled', enabled);
+            localStorage.setItem('refreshInterval', interval);
+
+            scheduleAutoRefresh();
+        }
+
+        function scheduleAutoRefresh() {
+            if (autoRefreshTimeout) clearTimeout(autoRefreshTimeout);
+
+            const toggle = document.getElementById('autoRefreshToggle');
+            if (!toggle || !toggle.checked) return;
+
+            const selector = document.getElementById('refreshInterval');
+            const interval = selector ? (parseInt(selector.value) || 30000) : 30000;
+
+            autoRefreshTimeout = setTimeout(function () {
+                // Don't reload if scan running or modal open
+                if (!currentScanIp && !document.querySelector('.modal.show')) {
+                    window.location.reload(1);
+                } else {
+                    // Retry later if blocked
+                    scheduleAutoRefresh();
+                }
+            }, interval);
+        }
+        scheduleAutoRefresh();
+
+        function showScanWarning(ip) {
+            currentScanIp = ip;
+            document.getElementById('scanTargetIp').textContent = ip;
+            const modal = new bootstrap.Modal(document.getElementById('warningModal'));
+            modal.show();
+        }
+
+        function startFullScan() {
+            const warningModal = bootstrap.Modal.getInstance(document.getElementById('warningModal'));
+            warningModal.hide();
+
+            document.getElementById('progressIp').textContent = currentScanIp;
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressBar').textContent = '0%';
+            document.getElementById('currentPort').textContent = '0';
+            document.getElementById('portsFound').textContent = '0';
+            document.getElementById('elapsedTime').textContent = '0s';
+
+            const progressModal = new bootstrap.Modal(document.getElementById('progressModal'));
+            progressModal.show();
+
+            fetch(`/api/scan-all-ports/${currentScanIp}`, { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'started') {
+                        // We use WebSocket for progress now, but keep polling as fallback if WS fails
+                        if (!socket || socket.readyState !== WebSocket.OPEN) {
+                            pollProgress();
+                        }
+                    } else {
+                        alert('Error starting scan: ' + (data.error || 'Unknown error'));
+                        progressModal.hide();
+                        currentScanIp = null;
+                    }
+                })
+                .catch(error => {
+                    alert('Error starting scan: ' + error);
+                    progressModal.hide();
+                    currentScanIp = null;
+                });
+        }
+
+        function updateScanUI(data) {
+            const progress = data.progress || 0;
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressBar').textContent = progress + '%';
+            document.getElementById('currentPort').textContent = data.current_port || 0;
+            document.getElementById('portsFound').textContent = data.ports_found || 0;
+
+            const elapsed = Math.floor(data.elapsed_time || 0);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            document.getElementById('elapsedTime').textContent =
+                minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+        }
+
+        function handleScanComplete(ip, data) {
+            updateScanUI(data);
+            const progressModal = bootstrap.Modal.getInstance(document.getElementById('progressModal'));
+            if (progressModal) progressModal.hide();
+
+            const portsFound = data.ports_found || 0;
+            alert(`✓ Scan complete!\n\nFound ${portsFound} open port(s) on ${ip}`);
+
+            currentScanIp = null;
+            location.reload();
+        }
+
+        function pollProgress() {
+            if (!currentScanIp) return;
+
+            pollInterval = setInterval(() => {
+                fetch(`/api/scan-progress/${currentScanIp}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        updateScanUI(data);
+
+                        if (data.status === 'complete') {
+                            clearInterval(pollInterval);
+                            handleScanComplete(currentScanIp, data);
+                        } else if (data.status === 'error') {
+                            clearInterval(pollInterval);
+                            alert('Scan error: ' + (data.error || 'Unknown error'));
+                            const progressModal = bootstrap.Modal.getInstance(document.getElementById('progressModal'));
+                            progressModal.hide();
+                            currentScanIp = null;
+                            scheduleAutoRefresh();
+                        }
+                    })
+                    .catch(error => console.error('Error polling progress:', error));
+            }, 1000);
+        }
+
+        // Notifications functionality
+        let notificationsOpen = false;
+
+        function toggleNotifications() {
+            const sidebar = document.getElementById('notificationsSidebar');
+            const overlay = document.getElementById('notificationsOverlay');
+
+            notificationsOpen = !notificationsOpen;
+
+            if (notificationsOpen) {
+                sidebar.classList.add('show');
+                overlay.classList.add('show');
+                loadNotifications();
+            } else {
+                sidebar.classList.remove('show');
+                overlay.classList.remove('show');
+            }
+        }
+
+        function loadNotifications() {
+            fetch('/api/notifications')
+                .then(response => response.json())
+                .then(notifications => {
+                    renderNotifications(notifications);
+                    updateNotificationBadge(notifications);
+                })
+                .catch(error => console.error('Error loading notifications:', error));
+        }
+
+        function renderNotifications(notifications) {
+            const container = document.getElementById('notificationsList');
+
+            if (!notifications || notifications.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-bell-slash empty-state-icon"></i>
+                        <p>No notifications</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = notifications.map(notification => {
+                const severityIcons = {
+                    'info': 'bi-info-circle text-info',
+                    'warning': 'bi-exclamation-triangle text-warning',
+                    'critical': 'bi-exclamation-octagon text-danger'
+                };
+
+                const icon = severityIcons[notification.severity] || 'bi-bell text-secondary';
+                const unreadClass = notification.read ? '' : 'unread';
+                const timestamp = new Date(notification.timestamp).toLocaleString();
+
+                return `
+                    <div class="notification-item ${unreadClass}">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div class="d-flex align-items-center">
+                                <i class="bi ${icon} me-2"></i>
+                                <strong>${notification.type.replace('_', ' ').toUpperCase()}</strong>
+                            </div>
+                            <div class="btn-group btn-group-sm">
+                                ${!notification.read ? `
+                                    <button class="btn btn-outline-primary btn-sm" onclick="markAsRead(${notification.id})" title="Mark as read">
+                                        <i class="bi bi-check"></i>
+                                    </button>
+                                ` : ''}
+                                <button class="btn btn-outline-danger btn-sm" onclick="deleteNotification(${notification.id})" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="mb-1 small">${notification.message}</p>
+                        <small class="text-muted">
+                            <i class="bi bi-clock"></i> ${timestamp}
+                            ${notification.device_ip ? ` | <i class="bi bi-router"></i> ${notification.device_ip}` : ''}
+                        </small>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateNotificationBadge(notifications) {
+            const badge = document.getElementById('notificationBadge');
+            const unreadCount = notifications.filter(n => !n.read).length;
+
+            if (unreadCount > 0) {
+                badge.textContent = unreadCount;
+                badge.style.display = 'block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function markAsRead(id) {
+            fetch(`/api/notifications/${id}/read`, { method: 'POST' })
+                .then(response => response.json())
+                .then(() => {
+                    loadNotifications();
+                })
+                .catch(error => console.error('Error marking notification as read:', error));
+        }
+
+        function deleteNotification(id) {
+            if (confirm('Are you sure you want to delete this notification?')) {
+                fetch(`/api/notifications/${id}`, { method: 'DELETE' })
+                    .then(response => response.json())
+                    .then(() => {
+                        loadNotifications();
+                    })
+                    .catch(error => console.error('Error deleting notification:', error));
+            }
+        }
+
+        function markAllAsRead() {
+            fetch('/api/notifications/read-all', { method: 'POST' })
+                .then(() => loadNotifications());
+        }
+
+        function clearAllNotifications() {
+            if (confirm('Delete ALL notifications?')) {
+                fetch('/api/notifications/all', { method: 'DELETE' })
+                    .then(() => loadNotifications());
+            }
+        }
+
+        // Load notifications on page load
+        loadNotifications();
+        initWebSocket();
+
+        // Port Information Database
+        const portInfo = {
+            20: "FTP Data Transfer",
+            21: "FTP Control (File Transfer Protocol)",
+            22: "SSH (Secure Shell) - Remote administration",
+            23: "Telnet - Unencrypted remote access ⚠️",
+            25: "SMTP (Email sending)",
+            53: "DNS (Domain Name System)",
+            67: "DHCP Server",
+            68: "DHCP Client",
+            69: "TFTP (Trivial File Transfer Protocol)",
+            80: "HTTP (Web server)",
+            110: "POP3 (Email retrieval)",
+            123: "NTP (Network Time Protocol)",
+            135: "Windows RPC",
+            137: "NetBIOS Name Service",
+            138: "NetBIOS Datagram Service",
+            139: "NetBIOS Session Service",
+            143: "IMAP (Email access)",
+            161: "SNMP (Network monitoring)",
+            162: "SNMP Trap",
+            389: "LDAP (Directory services)",
+            443: "HTTPS (Secure web server)",
+            445: "SMB (Windows file sharing)",
+            465: "SMTPS (Secure email sending)",
+            514: "Syslog (System logging)",
+            515: "LPD (Line Printer Daemon)",
+            587: "SMTP Submission (Email)",
+            631: "IPP (Internet Printing Protocol)",
+            636: "LDAPS (Secure LDAP)",
+            873: "rsync (File synchronization)",
+            993: "IMAPS (Secure IMAP)",
+            995: "POP3S (Secure POP3)",
+            1080: "SOCKS Proxy",
+            1194: "OpenVPN",
+            1433: "Microsoft SQL Server",
+            1521: "Oracle Database",
+            1723: "PPTP VPN",
+            2049: "NFS (Network File System)",
+            2082: "cPanel",
+            2083: "cPanel SSL",
+            2086: "WHM (Web Host Manager)",
+            2087: "WHM SSL",
+            3000: "Node.js / Development server",
+            3306: "MySQL/MariaDB Database",
+            3389: "RDP (Remote Desktop Protocol)",
+            4000: "Development server",
+            4443: "Custom HTTPS",
+            5000: "Flask / Development server",
+            5432: "PostgreSQL Database",
+            5900: "VNC (Virtual Network Computing)",
+            5901: "VNC Display 1",
+            6379: "Redis Database",
+            6443: "Kubernetes API",
+            8000: "HTTP Alternative / Development",
+            8008: "HTTP Alternative",
+            8080: "HTTP Proxy / Alternative",
+            8081: "HTTP Alternative",
+            8088: "HTTP Alternative",
+            8443: "HTTPS Alternative",
+            8888: "HTTP Alternative",
+            9000: "SonarQube / Development",
+            9090: "Prometheus / Cockpit",
+            9091: "Prometheus Pushgateway",
+            9092: "Apache Kafka",
+            9100: "Prometheus Node Exporter",
+            9200: "Elasticsearch",
+            9300: "Elasticsearch Transport",
+            9443: "HTTPS Alternative",
+            10000: "Webmin",
+            11211: "Memcached",
+            27017: "MongoDB Database",
+            27018: "MongoDB Shard",
+            50000: "SAP",
+            50070: "Hadoop NameNode",
+            51820: "WireGuard VPN"
+        };
+
+        // Initialize tooltips for port badges
+        function initPortTooltips() {
+            const portBadges = document.querySelectorAll('.port-badge');
+            portBadges.forEach(badge => {
+                const port = badge.getAttribute('data-port');
+                const info = portInfo[port] || `Port ${port} - Custom service`;
+
+                // Initialize Bootstrap tooltip
+                new bootstrap.Tooltip(badge, {
+                    title: info,
+                    placement: 'top',
+                    trigger: 'hover'
+                });
+            });
+        }
+
+        // Initialize tooltips when DOM is ready
+        document.addEventListener('DOMContentLoaded', initPortTooltips);
+
+
+        // Refresh notifications every 30 seconds (backup)
+        setInterval(loadNotifications, 30000);
+
+        // Charts Initialization
+        document.addEventListener('DOMContentLoaded', function () {
+            initNetworkActivityChart();
+            initDeviceTypeChart();
+        });
+
+        function initNetworkActivityChart() {
+            fetch('/api/stats/trends?days=30')
+                .then(response => response.json())
+                .then(data => {
+                    const ctx = document.getElementById('networkActivityChart').getContext('2d');
+
+                    if (!data || data.length === 0) {
+                        // Handle empty data
+                        return;
+                    }
+
+                    // Sort by date just in case
+                    data.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                    const dates = data.map(d => new Date(d.date).toLocaleDateString());
+                    const totalDevices = data.map(d => d.total_devices);
+                    const activeDevices = data.map(d => d.active_devices);
+
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: dates,
+                            datasets: [
+                                {
+                                    label: 'Total Devices',
+                                    data: totalDevices,
+                                    borderColor: '#1f6feb', // Blue
+                                    backgroundColor: 'rgba(31, 111, 235, 0.1)',
+                                    tension: 0.3,
+                                    fill: true
+                                },
+                                {
+                                    label: 'Active Devices',
+                                    data: activeDevices,
+                                    borderColor: '#238636', // Green
+                                    backgroundColor: 'rgba(35, 134, 54, 0.1)',
+                                    tension: 0.3,
+                                    fill: true
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'top',
+                                    labels: { color: '#c9d1d9' }
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    ticks: { color: '#8b949e' },
+                                    grid: { color: '#30363d' }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { color: '#8b949e' },
+                                    grid: { color: '#30363d' }
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(err => console.error('Error loading chart data:', err));
+        }
+
+        function initDeviceTypeChart() {
+            // Count device types from the table
+            const typeCounts = {};
+            document.querySelectorAll('tbody tr').forEach(row => {
+                const typeBadge = row.querySelector('td:nth-child(5) .badge');
+                let type = 'Unknown';
+                if (typeBadge) {
+                    type = typeBadge.textContent.trim();
+                } else {
+                    const typeText = row.querySelector('td:nth-child(5) .text-muted');
+                    if (typeText) type = typeText.textContent.trim();
+                }
+
+                typeCounts[type] = (typeCounts[type] || 0) + 1;
+            });
+
+            const labels = Object.keys(typeCounts);
+            const data = Object.values(typeCounts);
+
+            // Colors for the pie chart
+            const backgroundColors = [
+                '#1f6feb', '#238636', '#da3633', '#d29922', '#8957e5', '#a371f7', '#21262d'
+            ];
+
+            const ctx = document.getElementById('deviceDistributionChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: backgroundColors.slice(0, labels.length),
+                        borderColor: '#0d1117',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: { color: '#c9d1d9', font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

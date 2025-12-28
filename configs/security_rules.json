@@ -1,0 +1,72 @@
+[
+  {
+    "id": "VULN-001",
+    "name": "Telnet Exposure",
+    "port": 23,
+    "severity": "high",
+    "description": "Telnet protocol is enabled. Communication is unencrypted, exposing credentials.",
+    "solution": "Disable Telnet and use SSH (port 22) instead.",
+    "more_info": "https://en.wikipedia.org/wiki/Telnet",
+    "cve_keyword": "Telnet"
+  },
+  {
+    "id": "VULN-002",
+    "name": "FTP Exposure",
+    "port": 21,
+    "severity": "medium",
+    "description": "FTP sends credentials and data in cleartext.",
+    "solution": "Use SFTP or FTPS instead.",
+    "more_info": "https://en.wikipedia.org/wiki/File_Transfer_Protocol#Security",
+    "cve_keyword": "FTP"
+  },
+  {
+    "id": "VULN-003",
+    "name": "Unsecured HTTP",
+    "port": 80,
+    "severity": "low",
+    "description": "HTTP traffic is not encrypted.",
+    "solution": "Implement HTTPS (port 443) and redirect HTTP traffic.",
+    "more_info": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview#http_and_https",
+    "cve_keyword": "HTTP"
+  },
+  {
+    "id": "VULN-004",
+    "name": "SMBv1 Exposure",
+    "port": 445,
+    "severity": "critical",
+    "description": "SMB port is open. SMBv1 is highly vulnerable to exploits like EternalBlue.",
+    "solution": "Ensure SMBv1 is disabled and port is not exposed to untrusted networks.",
+    "more_info": "https://docs.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3",
+    "cve_keyword": "SMB"
+  },
+  {
+    "id": "VULN-005",
+    "name": "UPnP Enabled",
+    "port": 1900,
+    "severity": "medium",
+    "description": "UPnP can be used to bypass firewall rules automatically.",
+    "solution": "Disable UPnP if not explicitly required.",
+    "more_info": "https://en.wikipedia.org/wiki/Universal_Plug_and_Play#Security_problems",
+    "cve_keyword": "UPnP"
+  },
+  {
+    "id": "VULN-006",
+    "name": "Database Exposed",
+    "port": 3306,
+    "severity": "high",
+    "description": "MySQL database port is exposed.",
+    "solution": "Restrict access to trusted IPs only or use a VPN.",
+    "more_info": "https://dev.mysql.com/doc/refman/8.0/en/security-guidelines.html",
+    "cve_keyword": "MySQL"
+  },
+  {
+    "id": "VULN-007",
+    "name": "Redis Exposed",
+    "port": 6379,
+    "severity": "critical",
+    "description": "Redis port is open. Redis often has no password by default.",
+    "solution": "Bind Redis to localhost or require strong authentication.",
+    "more_info": "https://redis.io/topics/security",
+    "cve_keyword": "Redis"
+  }
+]
