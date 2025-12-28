@@ -13,7 +13,7 @@ import (
 // IdentifyDevice enriches device information
 func IdentifyDevice(device *database.Device) {
 	// Get vendor
-	device.Vendor = vendor.LookupVendor(device.MAC)
+	device.Vendor = devicevendor.LookupVendor(device.MAC)
 
 	// Scan common ports
 	device.OpenPorts = ScanCommonPorts(device.IP)

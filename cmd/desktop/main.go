@@ -10,6 +10,7 @@ import (
 	"network-scanner-desktop/internal/scanner"
 	"network-scanner-desktop/internal/web"
 	"os"
+	"os/exec"
 	"os/signal"
 	"runtime"
 	"syscall"
@@ -19,13 +20,23 @@ import (
 )
 
 func main() {
+	// Single instance check per user to prevent multiple windows opening
+	// We try to listen on a specific port. If it's taken, another instance is running.
+	lockPort := 5051
+	lock, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", lockPort))
+	if err != nil {
+		log.Println("Another instance is already running. Exiting.")
+		return
+	}
+	defer lock.Close()
+
 	// Initialize database
 	dbPath := "scanner.db"
 	if err := database.Init(dbPath); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	// Setup web server on a random port
+	// Setup web server on a random port for the internal UI
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Fatal(err)
@@ -33,6 +44,7 @@ func main() {
 	defer ln.Close()
 
 	port := fmt.Sprintf("%d", ln.Addr().(*net.TCPAddr).Port)
+	log.Printf("Internal server running on http://127.0.0.1:%s", port)
 	server := web.NewServer(port)
 
 	go http.Serve(ln, server.GetRouter())
@@ -116,6 +128,6 @@ func openBrowser(url string) {
 }
 
 func execCommand(name string, args ...string) error {
-	// Simple wrapper for executing commands safely across platforms
-	return nil
+	cmd := exec.Command(name, args...)
+	return cmd.Start()
 }
